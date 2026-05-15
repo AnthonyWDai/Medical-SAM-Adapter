@@ -1,0 +1,43 @@
+# Core scientific Python
+numpy
+scipy
+matplotlib
+tqdm
+
+# Image processing / medical imaging
+scikit-image
+opencv-python
+SimpleITK==2.2.1
+nibabel
+pydicom
+pynrrd
+h5py
+tifffile
+itk
+
+# Deep learning / MONAI
+monai
+einops
+pytorch-ignite
+kornia
+
+# Model libraries
+timm
+transformers
+safetensors
+
+# Jupyter / visualization
+jupyterlab
+ipywidgets
+ipympl
+ipython
+
+# Experiment tracking / optimization
+optuna
+mlflow
+tensorboardX
+
+# Utilities
+gdown
+nptyping
+json-tricks
