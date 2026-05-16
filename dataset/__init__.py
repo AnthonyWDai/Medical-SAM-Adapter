@@ -18,6 +18,7 @@ from .segrap import SegRap
 from .stare import STARE
 from .toothfairy import ToothFairy
 from .wbc import WBC
+from .wb import WholeBody
 
 
 def get_dataloader(args):
@@ -169,6 +170,21 @@ def get_dataloader(args):
     elif args.dataset == 'toothfairy':
         '''toothfairy data'''
         dataset = ToothFairy(args, data_path = args.data_path,transform = transform_train, transform_msk= transform_train_seg)
+
+        dataset_size = len(dataset)
+        indices = list(range(dataset_size))
+        split = int(np.floor(0.3 * dataset_size))
+        np.random.shuffle(indices)
+        train_sampler = SubsetRandomSampler(indices[split:])
+        test_sampler = SubsetRandomSampler(indices[:split])
+
+        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=8, pin_memory=True)
+        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=8, pin_memory=True)
+        '''end'''
+
+    elif args.dataset == 'wb':
+        '''wb data'''
+        dataset = WholeBody(args, data_path=args.data_path, transform=transform_train, transform_msk= transform_train_seg)
 
         dataset_size = len(dataset)
         indices = list(range(dataset_size))

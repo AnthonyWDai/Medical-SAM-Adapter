@@ -78,7 +78,7 @@ def main():
 
     '''checkpoint path and tensorboard'''
     # iter_per_epoch = len(Glaucoma_training_loader)
-    checkpoint_path = os.path.join(settings.CHECKPOINT_PATH, args.net, settings.TIME_NOW)
+    checkpoint_path = "%s/msadapter/%s/%s" % (os.environ["exp"], args.dataset, settings.TIME_NOW)
     #use tensorboard
     if not os.path.exists(settings.LOG_DIR):
         os.mkdir(settings.LOG_DIR)

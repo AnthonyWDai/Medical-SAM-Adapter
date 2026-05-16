@@ -1,0 +1,147 @@
+from pathlib import Path
+from typing import Optional, Callable, Dict, Any
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+from torch.utils.data import Dataset
+
+from utils import random_click
+
+
+class WholeBody(Dataset):
+    """
+    Dataset for whole-body volumes stored as:
+
+        Dataset/
+            sample_001/
+                data.npy       # expected shape: [D, H, W]
+                gt_sparse.npy  # expected shape: [D, H, W]
+
+    Returns:
+        {
+            "image": Tensor [1, image_size, image_size, D],
+            "label": Tensor [1, out_size, out_size, D],
+            "p_label": int,
+            "pt": click point or None,
+            "image_meta_dict": {"filename_or_obj": sample_name}
+        }
+    """
+
+    def __init__(
+        self,
+        args,
+        data_path: str,
+        transform: Optional[Callable] = None,
+        transform_msk: Optional[Callable] = None,
+        mode: str = "Training",
+        prompt: str = "click",
+        plane: bool = False,
+    ):
+        self.args = args
+        self.root = Path(data_path) / "Dataset"
+        self.mode = mode
+        self.prompt = prompt
+        self.plane = plane
+
+        self.img_size = int(args.image_size)
+        self.out_size = int(args.out_size)
+
+        self.transform = transform
+        self.transform_msk = transform_msk
+
+        if not self.root.exists():
+            raise FileNotFoundError(f"Dataset directory not found: {self.root}")
+
+        self.samples = sorted(
+            p for p in self.root.iterdir()
+            if p.is_dir()
+            and (p / "data.npy").exists()
+            and (p / "gt_sparse.npy").exists()
+        )
+
+        if len(self.samples) == 0:
+            raise RuntimeError(f"No valid samples found in {self.root}")
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int) -> Dict[str, Any]:
+        sample_dir = self.samples[index]
+
+        image = np.load(sample_dir / "data.npy")
+        mask = np.load(sample_dir / "gt_sparse.npy")
+
+        if image.ndim != 3:
+            raise ValueError(
+                f"Expected image shape [D, H, W], got {image.shape} "
+                f"for sample {sample_dir.name}"
+            )
+
+        if mask.ndim != 3:
+            raise ValueError(
+                f"Expected mask shape [D, H, W], got {mask.shape} "
+                f"for sample {sample_dir.name}"
+            )
+
+        if image.shape != mask.shape:
+            raise ValueError(
+                f"Image/mask shape mismatch for {sample_dir.name}: "
+                f"image={image.shape}, mask={mask.shape}"
+            )
+
+        # Convert [D, H, W] numpy arrays to tensors.
+        image = torch.from_numpy(np.ascontiguousarray(image)).float()
+        mask = torch.from_numpy(np.ascontiguousarray(mask)).float()
+
+        # Treat D as channels and resize only spatial dimensions H, W.
+        # Shape: [D, H, W] -> [1, D, H, W]
+        image = image.unsqueeze(0)
+        mask = mask.unsqueeze(0)
+
+        image = F.interpolate(
+            image,
+            size=(self.img_size, self.img_size),
+            mode="bilinear",
+            align_corners=False,
+        )
+
+        mask = F.interpolate(
+            mask,
+            size=(self.out_size, self.out_size),
+            mode="nearest",
+        )
+
+        # Back to [D, H, W]
+        image = image.squeeze(0)
+        mask = mask.squeeze(0)
+
+        # Binary mask, matching original behavior.
+        mask = mask.clamp_(0, 1).to(torch.int64)
+
+        # Preserve your original returned layout:
+        # [H, W, D] -> [1, H, W, D]
+        image = image.unsqueeze(0).contiguous()
+        mask = mask.unsqueeze(0).contiguous()
+
+        if self.transform is not None:
+            image = self.transform(image)
+
+        if self.transform_msk is not None:
+            mask = self.transform_msk(mask)
+
+        point_label = 1
+        pt = None
+
+        if self.prompt == "click":
+            point_label, pt = random_click(mask.cpu().numpy(), point_label)
+
+        return {
+            "image": image,
+            "label": mask,
+            "p_label": point_label,
+            "pt": pt,
+            "image_meta_dict": {
+                "filename_or_obj": sample_dir.name,
+            },
+        }
