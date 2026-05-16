@@ -184,7 +184,7 @@ def get_dataloader(args):
 
     elif args.dataset == 'wb':
         '''wb data'''
-        dataset = WholeBody(args, data_path=args.data_path, transform=transform_train, transform_msk= transform_train_seg)
+        dataset = WholeBody(args, data_path=args.data_path, transform=transform_train, transform_msk=transform_train_seg)
 
         dataset_size = len(dataset)
         indices = list(range(dataset_size))

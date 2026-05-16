@@ -69,38 +69,23 @@ class WholeBody(Dataset):
     def __getitem__(self, index: int) -> Dict[str, Any]:
         sample_dir = self.samples[index]
 
-        image = np.load(sample_dir / "data.npy")
+        image_ct = np.load(sample_dir / "data_0000.npy")
+        image_pet = np.load(sample_dir / "data_0001.npy")
         mask = np.load(sample_dir / "gt_sparse.npy")
 
-        if image.ndim != 3:
-            raise ValueError(
-                f"Expected image shape [D, H, W], got {image.shape} "
-                f"for sample {sample_dir.name}"
-            )
-
-        if mask.ndim != 3:
-            raise ValueError(
-                f"Expected mask shape [D, H, W], got {mask.shape} "
-                f"for sample {sample_dir.name}"
-            )
-
-        if image.shape != mask.shape:
-            raise ValueError(
-                f"Image/mask shape mismatch for {sample_dir.name}: "
-                f"image={image.shape}, mask={mask.shape}"
-            )
-
-        # Convert [D, H, W] numpy arrays to tensors.
-        image = torch.from_numpy(np.ascontiguousarray(image)).float()
+        # Convert [H, W, D] numpy arrays to tensors.
+        image_ct = torch.from_numpy(np.ascontiguousarray(image_ct)).float()
+        image_pet = torch.from_numpy(np.ascontiguousarray(image_pet)).float()
         mask = torch.from_numpy(np.ascontiguousarray(mask)).float()
 
+
         # Treat D as channels and resize only spatial dimensions H, W.
-        # Shape: [D, H, W] -> [1, D, H, W]
-        image = image.unsqueeze(0)
+        # Shape: [H, W, D] -> [1, H, W, D]
+        image_ct = image_ct.unsqueeze(0)
         mask = mask.unsqueeze(0)
 
-        image = F.interpolate(
-            image,
+        image_ct = F.interpolate(
+            image_ct,
             size=(self.img_size, self.img_size),
             mode="bilinear",
             align_corners=False,
@@ -112,16 +97,22 @@ class WholeBody(Dataset):
             mode="nearest",
         )
 
-        # Back to [D, H, W]
-        image = image.squeeze(0)
+        # Back to [H, W, D]
+        image_ct = image_ct.squeeze(0)
         mask = mask.squeeze(0)
 
         # Binary mask, matching original behavior.
         mask = mask.clamp_(0, 1).to(torch.int64)
 
-        # Preserve your original returned layout:
-        # [H, W, D] -> [1, H, W, D]
-        image = image.unsqueeze(0).contiguous()
+        # Binary/integer mask.
+        mask = mask.clamp_(0, 1).to(torch.int64)
+
+        # Stack modalities as channels.
+        # image: [C, H, W, D] where C=3: CT, PET, CT/PET
+        # mask:  [1, H, W, D]
+        image = torch.stack([
+            image_ct, image_pet, (image_ct + image_pet) / 2
+        ], dim=0).contiguous()
         mask = mask.unsqueeze(0).contiguous()
 
         if self.transform is not None:
@@ -132,7 +123,6 @@ class WholeBody(Dataset):
 
         point_label = 1
         pt = None
-
         if self.prompt == "click":
             point_label, pt = random_click(mask.cpu().numpy(), point_label)
 
@@ -143,5 +133,6 @@ class WholeBody(Dataset):
             "pt": pt,
             "image_meta_dict": {
                 "filename_or_obj": sample_dir.name,
+                "modalities": ["ct", "pet"],
             },
         }

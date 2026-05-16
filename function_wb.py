@@ -93,11 +93,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader,
                 imgs, pt, masks = generate_click_prompt(imgs, masks)
 
                 pt = rearrange(pt, 'b n d -> (b d) n')
-                imgs = rearrange(imgs, 'b c h w d -> (b d) c h w ')
-                masks = rearrange(masks, 'b c h w d -> (b d) c h w ')
+                imgs = rearrange(imgs, 'b c h w d -> (b d) c h w')
+                masks = rearrange(masks, 'b c h w d -> (b d) c h w')
 
-                # treated as a 3 in channel data, but just repeated
-                imgs = imgs.repeat(1, 3, 1, 1)
                 point_labels = torch.ones(imgs.size(0))
 
                 imgs = torchvision.transforms.Resize((args.image_size, args.image_size))(imgs)
@@ -107,7 +105,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader,
             mask_type = torch.float32
             ind += 1
             b_size,c,w,h = imgs.size()
-            longsize = w if w >=h else h
+            longsize = w if w >= h else h
 
             if point_labels.clone().flatten()[0] != -1:
                     # point_coords = samtrans.ResizeLongestSide(longsize).apply_coords(pt, (h, w))
