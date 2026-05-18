@@ -1003,7 +1003,7 @@ def vis_image(imgs, pred_masks, gt_masks, save_path, reverse = False, points = N
         if points != None:
             for i in range(b):
                 if args.thd:
-                    ps = np.round(points.cpu()/args.roi_size * args.out_size).to(dtype = torch.int)
+                    ps = torch.round(points.detach().cpu().float() / args.roi_size * args.out_size).to(dtype=torch.int)
                 else:
                     ps = np.round(points.cpu()/args.image_size * args.out_size).to(dtype = torch.int)
                 # gt_masks[i,:,points[i,0]-5:points[i,0]+5,points[i,1]-5:points[i,1]+5] = torch.Tensor([255, 0, 0]).to(dtype = torch.float32, device = torch.device('cuda:' + str(dev)))
