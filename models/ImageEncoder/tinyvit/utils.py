@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from timm.models.layers import DropPath as TimmDropPath
+from timm.layers import DropPath as TimmDropPath
 
 
 class Conv2d_BN(torch.nn.Sequential):

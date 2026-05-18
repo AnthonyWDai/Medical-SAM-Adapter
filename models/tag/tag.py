@@ -1,7 +1,7 @@
 import math
 import torch.nn.init as init
 from timm.models.registry import register_model
-from timm.models.layers import DropPath
+from timm.layers import DropPath
 
 from .tag_layers import *
 

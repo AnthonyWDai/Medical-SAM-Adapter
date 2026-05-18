@@ -3,7 +3,7 @@ import itertools
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from timm.models.layers import DropPath as TimmDropPath
+from timm.layers import DropPath as TimmDropPath
 
 from .utils import Conv2d_BN, DropPath, Mlp
 

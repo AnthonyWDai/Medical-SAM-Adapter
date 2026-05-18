@@ -1,10 +1,5 @@
-# train.py
-#!/usr/bin/env	python3
-
-""" train network using pytorch
-    Junde Wu
-"""
-
+# refined: https://chat.aicopilot.aws.mskcc.org/c/1a4d0db6-6835-44e8-807b-efcef3b4e689
+# output dir?
 import argparse
 import os
 import sys
