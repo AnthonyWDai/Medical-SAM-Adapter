@@ -1,6 +1,6 @@
 import math
 import torch.nn.init as init
-from timm.models.registry import register_model
+from timm.models import register_model
 from timm.layers import DropPath
 
 from .tag_layers import *

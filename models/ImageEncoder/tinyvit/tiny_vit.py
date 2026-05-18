@@ -16,7 +16,7 @@ import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 from timm.layers import DropPath as TimmDropPath
 from timm.layers import to_2tuple, trunc_normal_
-from timm.models.registry import register_model
+from timm.models import register_model
 
 from ...common import LayerNorm2d
 from .adalora_block import TinyViTAdaloraBlock

@@ -81,36 +81,35 @@ class WholeBody(Dataset):
         image_pet = torch.from_numpy(np.ascontiguousarray(image_pet)).float()
         mask = torch.from_numpy(np.ascontiguousarray(mask)).float()
 
+        # # Treat D as channels and resize only spatial dimensions H, W.
+        # # Shape: [H, W, D] -> [1, H, W, D]
+        # image_ct = image_ct.unsqueeze(0)
+        # image_pet = image_pet.unsqueeze(0)
+        # mask = mask.unsqueeze(0)
 
-        # Treat D as channels and resize only spatial dimensions H, W.
-        # Shape: [H, W, D] -> [1, H, W, D]
-        image_ct = image_ct.unsqueeze(0)
-        image_pet = image_pet.unsqueeze(0)
-        mask = mask.unsqueeze(0)
+        # image_ct = F.interpolate(
+        #     image_ct,
+        #     size=(self.img_size, self.img_size),
+        #     mode="bilinear",
+        #     align_corners=False,
+        # )
+        # image_pet = F.interpolate(
+        #     image_pet,
+        #     size=(self.img_size, self.img_size),
+        #     mode="bilinear",
+        #     align_corners=False,
+        # )
 
-        image_ct = F.interpolate(
-            image_ct,
-            size=(self.img_size, self.img_size),
-            mode="bilinear",
-            align_corners=False,
-        )
-        image_pet = F.interpolate(
-            image_pet,
-            size=(self.img_size, self.img_size),
-            mode="bilinear",
-            align_corners=False,
-        )
+        # mask = F.interpolate(
+        #     mask,
+        #     size=(self.img_size, self.img_size),
+        #     mode="nearest",
+        # )
 
-        mask = F.interpolate(
-            mask,
-            size=(self.out_size, self.out_size),
-            mode="nearest",
-        )
-
-        # Back to [H, W, D]
-        image_ct = image_ct.squeeze(0)
-        image_pet = image_pet.squeeze(0)
-        mask = mask.squeeze(0)
+        # # Back to [H, W, D]
+        # image_ct = image_ct.squeeze(0)
+        # image_pet = image_pet.squeeze(0)
+        # mask = mask.squeeze(0)
 
         # Binary mask, matching original behavior.
         mask = mask.clamp_(0, 1).to(torch.int64)
@@ -124,10 +123,9 @@ class WholeBody(Dataset):
         mask = mask.unsqueeze(0).contiguous()
 
         if self.transform is not None:
-            image = self.transform(image)
-
-        if self.transform_msk is not None:
-            mask = self.transform_msk(mask)
+            Data = {"image": image, "label": mask, "sample_id": index}
+            Data2 = self.transform(Data)
+            image, mask = Data2[0]["image"], Data2[0]["label"]
 
         point_label = 1
         pt = None

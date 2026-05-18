@@ -26,7 +26,7 @@ criterion_G = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
 torch.backends.cudnn.benchmark = True
 loss_function = DiceCELoss(to_onehot_y=True, softmax=True)
-scaler = torch.cuda.amp.GradScaler()
+scaler = torch.amp.GradScaler("cuda")
 max_iterations = settings.EPOCH
 post_label = AsDiscrete(to_onehot=14)
 post_pred = AsDiscrete(argmax=True, to_onehot=14)
@@ -60,6 +60,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader,
             masks = pack['label'].to(dtype = torch.float32, device = GPUdevice)
             # for k,v in pack['image_meta_dict'].items():
             #     print(k)
+
             if 'pt' not in pack:
                 imgs, pt, masks = generate_click_prompt(imgs, masks)
             else:
@@ -123,7 +124,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader,
                     
             origin_imgs = imgs.clone()        
             imgs = net.preprocess(imgs)        
-            imge= net.image_encoder(imgs)
+            imge = net.image_encoder(imgs)
             with torch.no_grad():
                 if args.net == 'sam' or args.net == 'mobile_sam':
                     se, de = net.prompt_encoder(
@@ -254,7 +255,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True):
                     pt = rearrange(pt, 'b n d -> (b d) n')
                     imgs = rearrange(imgs, 'b c h w d -> (b d) c h w ')
                     masks = rearrange(masks, 'b c h w d -> (b d) c h w ')
-                    imgs = imgs.repeat(1,3,1,1)
+                    # imgs = imgs.repeat(1,3,1,1)
                     point_labels = torch.ones(imgs.size(0))
 
                     imgs = torchvision.transforms.Resize((args.image_size,args.image_size))(imgs)

@@ -8,6 +8,7 @@ def parse_args():
     parser.add_argument('-baseline', type=str, default='unet', help='baseline net type')
     parser.add_argument('-encoder', type=str, default='default', help='encoder type')
     parser.add_argument('-seg_net', type=str, default='transunet', help='net type')
+    parser.add_argument("-freeze", type=int, default=2)
     parser.add_argument('-mod', type=str, default='sam_adpt', help='mod type:seg,cls,val_ad')
     parser.add_argument('-exp_name', default='msa_test_isic', type=str, help='net type')
     parser.add_argument('-type', type=str, default='map', help='condition type:ave,rand,rand_map')
@@ -39,13 +40,14 @@ def parse_args():
     parser.add_argument('-distributed', default='none' ,type=str,help='multi GPU ids to use')
     parser.add_argument('-dataset', default='isic' ,type=str,help='dataset name')
     parser.add_argument('-sam_ckpt', default=None , help='sam checkpoint address')
-    parser.add_argument('-thd', type=bool, default=False , help='3d or not')
+    parser.add_argument('--thd', action='store_true', help='Use 3D mode')
     parser.add_argument('-chunk', type=int, default=None , help='crop volume depth')
     parser.add_argument('-num_sample', type=int, default=4 , help='sample pos and neg')
     parser.add_argument('-roi_size', type=int, default=96 , help='resolution of roi')
     parser.add_argument('-evl_chunk', type=int, default=None , help='evaluation chunk')
     parser.add_argument('-mid_dim', type=int, default=None , help='middle dim of adapter or the rank of lora matrix')
     parser.add_argument('-multimask_output', type=int, default=1 , help='the number of masks output for multi-class segmentation, set 2 for REFUGE dataset.')
+    parser.add_argument('-num_workers', type=int, default=1 , help='the number of workers')
     parser.add_argument(
     '-data_path',
     type=str,

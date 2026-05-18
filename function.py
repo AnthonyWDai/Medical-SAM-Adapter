@@ -147,7 +147,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader,
                     
             origin_imgs = imgs.clone()        
             imgs = net.preprocess(imgs)        
-            imge= net.image_encoder(imgs)
+            imge = net.image_encoder(imgs)
             with torch.no_grad():
                 if args.net == 'sam' or args.net == 'mobile_sam':
                     se, de = net.prompt_encoder(

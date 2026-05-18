@@ -56,7 +56,6 @@ def get_dataloader(args):
     elif args.dataset == 'decathlon':
         nice_train_loader, nice_test_loader, transform_train, transform_val, train_list, val_list = get_decath_loader(args)
 
-
     elif args.dataset == 'REFUGE':
         '''REFUGE data'''
         refuge_train_dataset = REFUGE(args, args.data_path, transform = transform_train, transform_msk= transform_train_seg, mode = 'Training')
@@ -183,6 +182,18 @@ def get_dataloader(args):
         '''end'''
 
     elif args.dataset == 'wb':
+        transform_train = Compose([
+            RandCropByPosNegLabeld(
+                keys=["image", "label"],
+                label_key="label",
+                spatial_size=(args.roi_size, args.roi_size, args.chunk),
+                pos=1,
+                neg=1,
+                num_samples=args.num_sample,
+                image_key="image",
+                image_threshold=0,
+            ),
+        ])
         '''wb data'''
         dataset = WholeBody(args, data_path=args.data_path, transform=transform_train, transform_msk=transform_train_seg)
 
@@ -193,8 +204,8 @@ def get_dataloader(args):
         train_sampler = SubsetRandomSampler(indices[split:])
         test_sampler = SubsetRandomSampler(indices[:split])
 
-        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=8, pin_memory=True)
+        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=args.num_workers, pin_memory=True)
+        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=args.num_workers, pin_memory=True)
         '''end'''
 
     elif args.dataset == 'atlas':

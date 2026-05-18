@@ -25,6 +25,28 @@ def main():
     GPUdevice = torch.device('cuda', args.gpu_device)
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution = args.distributed)
+    # Freeze prompt encoder
+    if args.freeze >= 1:
+        for p in net.prompt_encoder.parameters():
+            p.requires_grad = False
+
+    # Freeze image encoder
+    if args.freeze >= 2:
+        for p in net.image_encoder.parameters():
+            p.requires_grad = False
+
+    # Train mask decoder
+    if args.freeze >= 3:
+        for p in net.mask_decoder.iou_token.parameters():
+            p.requires_grad = False
+
+        for p in net.mask_decoder.mask_tokens.parameters():
+            p.requires_grad = False
+
+    if args.freeze >= 4:
+        for p in net.mask_decoder.transformer.parameters():
+            p.requires_grad = False
+    
     if args.pretrain:
         weights = torch.load(args.pretrain)
         net.load_state_dict(weights, strict=False)
@@ -119,7 +141,7 @@ def main():
                 'optimizer': optimizer.state_dict(),
                 'best_tol': best_dice,
                 'path_helper': args.path_helper,
-            }, is_best, args.path_helper['ckpt_path'], filename="best_dice_checkpoint.pth")
+            }, is_best, checkpoint_path, filename="best_dice_checkpoint.pth")
             else:
                 is_best = False
 
