@@ -25,27 +25,6 @@ def main():
     GPUdevice = torch.device('cuda', args.gpu_device)
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution = args.distributed)
-    # Freeze prompt encoder
-    if args.freeze >= 1:
-        for p in net.prompt_encoder.parameters():
-            p.requires_grad = False
-
-    # Freeze image encoder
-    if args.freeze >= 2:
-        for p in net.image_encoder.parameters():
-            p.requires_grad = False
-
-    # Train mask decoder
-    if args.freeze >= 3:
-        for p in net.mask_decoder.iou_token.parameters():
-            p.requires_grad = False
-
-        for p in net.mask_decoder.mask_tokens.parameters():
-            p.requires_grad = False
-
-    if args.freeze >= 4:
-        for p in net.mask_decoder.transformer.parameters():
-            p.requires_grad = False
     
     if args.pretrain:
         weights = torch.load(args.pretrain)
@@ -72,7 +51,7 @@ def main():
         logger = create_logger(args.path_helper['log_path'])
         print(f'=> loaded checkpoint {checkpoint_file} (epoch {start_epoch})')
 
-    args.path_helper = set_log_dir('logs', args.exp_name)
+    args.path_helper = set_log_dir("%s/msadapter/logs" % os.environ["exp"], args.exp_name)
     logger = create_logger(args.path_helper['log_path'])
     logger.info(args)
 
@@ -99,17 +78,39 @@ def main():
     best_tol = 1e4
     best_dice = 0.0
 
+    # Freeze prompt encoder
+    if args.freeze >= 1:
+        for p in net.prompt_encoder.parameters():
+            p.requires_grad = False
+
+    # Freeze image encoder
+    if args.freeze >= 2:
+        for p in net.image_encoder.parameters():
+            p.requires_grad = False
+
+    # Train mask decoder
+    if args.freeze >= 3:
+        for p in net.mask_decoder.iou_token.parameters():
+            p.requires_grad = False
+
+        for p in net.mask_decoder.mask_tokens.parameters():
+            p.requires_grad = False
+
+    if args.freeze >= 4:
+        for p in net.mask_decoder.transformer.parameters():
+            p.requires_grad = False
+
     for epoch in range(settings.EPOCH):
-
-        if epoch < 5:
-            if args.dataset != 'REFUGE':
-                tol, (eiou, edice) = function_wb.validation_sam(args, nice_test_loader, epoch, net, writer)
-                logger.info(f'Total score: {tol}, IOU: {eiou}, DICE: {edice} || @ epoch {epoch}.')
-            else:
-                tol, (eiou_cup, eiou_disc, edice_cup, edice_disc) = function_wb.validation_sam(args, nice_test_loader, epoch, net, writer)
-                logger.info(f'Total score: {tol}, IOU_CUP: {eiou_cup}, IOU_DISC: {eiou_disc}, DICE_CUP: {edice_cup}, DICE_DISC: {edice_disc} || @ epoch {epoch}.')
-
+        # if epoch < 5:
+        #     if args.dataset != 'REFUGE':
+        #         tol, (eiou, edice) = function_wb.validation_sam(args, nice_test_loader, epoch, net, writer)
+        #         logger.info(f'Total score: {tol}, IOU: {eiou}, DICE: {edice} || @ epoch {epoch}.')
+        #     else:
+        #         tol, (eiou_cup, eiou_disc, edice_cup, edice_disc) = function_wb.validation_sam(args, nice_test_loader, epoch, net, writer)
+        #         logger.info(f'Total score: {tol}, IOU_CUP: {eiou_cup}, IOU_DISC: {eiou_disc}, DICE_CUP: {edice_cup}, DICE_DISC: {edice_disc} || @ epoch {epoch}.')
+        
         net.train()
+
         time_start = time.time()
         loss = function_wb.train_sam(args, net, optimizer, nice_train_loader, epoch, writer, vis = args.vis)
         logger.info(f'Train loss: {loss} || @ epoch {epoch}.')
@@ -141,7 +142,7 @@ def main():
                 'optimizer': optimizer.state_dict(),
                 'best_tol': best_dice,
                 'path_helper': args.path_helper,
-            }, is_best, checkpoint_path, filename="best_dice_checkpoint.pth")
+            }, is_best, args.path_helper['ckpt_path'], filename="best_dice_checkpoint.pth")
             else:
                 is_best = False
 

@@ -40,7 +40,7 @@ while i * 5 <= EPOCH:
 TIME_NOW = datetime.now().strftime("%F_%H-%M-%S.%f")
 
 #tensorboard log dir
-LOG_DIR = 'runs'
+LOG_DIR = "%s/msadapter/runs" % os.environ["exp"]
 
 #save weights file per SAVE_EPOCH epoch
 SAVE_EPOCH = 10
