@@ -39,7 +39,7 @@ class WholeBody(Dataset):
         plane: bool = False,
     ):
         self.args = args
-        self.root = Path(data_path) / "Dataset"
+        self.root = Path(data_path)
         self.mode = mode
         self.prompt = prompt
         self.plane = plane
@@ -56,12 +56,15 @@ class WholeBody(Dataset):
         self.samples = sorted(
             p for p in self.root.iterdir()
             if p.is_dir()
-            and (p / "data.npy").exists()
+            and (p / "data_0000.npy").exists()
+            and (p / "data_0001.npy").exists()
             and (p / "gt_sparse.npy").exists()
         )
 
         if len(self.samples) == 0:
             raise RuntimeError(f"No valid samples found in {self.root}")
+        else:
+            print("%d valid samples found" % len(self.samples))
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -82,10 +85,17 @@ class WholeBody(Dataset):
         # Treat D as channels and resize only spatial dimensions H, W.
         # Shape: [H, W, D] -> [1, H, W, D]
         image_ct = image_ct.unsqueeze(0)
+        image_pet = image_pet.unsqueeze(0)
         mask = mask.unsqueeze(0)
 
         image_ct = F.interpolate(
             image_ct,
+            size=(self.img_size, self.img_size),
+            mode="bilinear",
+            align_corners=False,
+        )
+        image_pet = F.interpolate(
+            image_pet,
             size=(self.img_size, self.img_size),
             mode="bilinear",
             align_corners=False,
@@ -99,12 +109,10 @@ class WholeBody(Dataset):
 
         # Back to [H, W, D]
         image_ct = image_ct.squeeze(0)
+        image_pet = image_pet.squeeze(0)
         mask = mask.squeeze(0)
 
         # Binary mask, matching original behavior.
-        mask = mask.clamp_(0, 1).to(torch.int64)
-
-        # Binary/integer mask.
         mask = mask.clamp_(0, 1).to(torch.int64)
 
         # Stack modalities as channels.

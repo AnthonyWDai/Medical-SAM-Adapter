@@ -1,27 +1,12 @@
 # refined: https://chat.aicopilot.aws.mskcc.org/c/1a4d0db6-6835-44e8-807b-efcef3b4e689
-# output dir?
-import argparse
 import os
-import sys
 import time
-from collections import OrderedDict
-from datetime import datetime
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchvision
-import torchvision.transforms as transforms
-from PIL import Image
-from skimage import io
-from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score
 from tensorboardX import SummaryWriter
-#from dataset import *
-from torch.autograd import Variable
-from torch.utils.data import DataLoader, random_split
-from torch.utils.data.sampler import SubsetRandomSampler
-from tqdm import tqdm
 
 import cfg
 import function_wb
@@ -42,7 +27,7 @@ def main():
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution = args.distributed)
     if args.pretrain:
         weights = torch.load(args.pretrain)
-        net.load_state_dict(weights,strict=False)
+        net.load_state_dict(weights, strict=False)
 
     optimizer = optim.Adam(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5) #learning rate decay

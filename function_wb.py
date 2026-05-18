@@ -1,37 +1,15 @@
-
-import argparse
 import os
-import shutil
-import sys
-import tempfile
-import time
-from collections import OrderedDict
-from datetime import datetime
 
-import matplotlib.pyplot as plt
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 import torchvision
-import torchvision.transforms as transforms
 from einops import rearrange
-from monai.inferers import sliding_window_inference
 from monai.losses import DiceCELoss
 from monai.transforms import AsDiscrete
-from PIL import Image
-from skimage import io
-from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score
-from tensorboardX import SummaryWriter
-#from dataset import *
-from torch.autograd import Variable
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import cfg
-import models.sam.utils.transforms as samtrans
-import pytorch_ssim
 #from models.discriminatorlayer import discriminator
 from conf import settings
 from utils import *

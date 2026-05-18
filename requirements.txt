@@ -1,6 +1,7 @@
 # Core scientific Python
 numpy
 scipy
+seaborn
 matplotlib
 tqdm
 

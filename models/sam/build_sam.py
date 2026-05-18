@@ -149,4 +149,5 @@ def _build_sam(
         # Create a new state dictionary with only the parameters that exist in the model
         new_state_dict = {k: v for k, v in state_dict.items() if k in sam.state_dict() and sam.state_dict()[k].shape == v.shape}
         sam.load_state_dict(new_state_dict, strict = False)
+        print("Loaded %s" % checkpoint)
     return sam
