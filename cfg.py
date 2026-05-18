@@ -12,7 +12,7 @@ def parse_args():
     parser.add_argument('-mod', type=str, default='sam_adpt', help='mod type:seg,cls,val_ad')
     parser.add_argument('-exp_name', default='msa_test_isic', type=str, help='net type')
     parser.add_argument('-type', type=str, default='map', help='condition type:ave,rand,rand_map')
-    parser.add_argument('-vis', type=int, default=None, help='visualization')
+    parser.add_argument('-vis', type=int, default=50, help='visualization')
     parser.add_argument('-reverse', type=bool, default=False, help='adversary reverse')
     parser.add_argument('-pretrain', type=bool, default=False, help='adversary reverse')
     parser.add_argument('-val_freq',type=int,default=5,help='interval between each validation')
