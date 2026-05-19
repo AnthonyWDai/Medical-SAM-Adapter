@@ -1,10 +1,12 @@
 import numpy as np
+import torch
+import torch.distributed as dist
 import torchvision.transforms as transforms
-from torch.utils.data import DataLoader, random_split
-from torch.utils.data.sampler import SubsetRandomSampler
+
+from torch.utils.data import DataLoader, Subset
+from torch.utils.data.distributed import DistributedSampler
 
 from utils import *
-
 from .atlas import Atlas
 from .brat import Brat
 from .ddti import DDTI
@@ -21,167 +23,236 @@ from .wbc import WBC
 from .wb import WholeBody
 
 
+def _is_ddp(args):
+    return (
+        getattr(args, "distributed", "none") in ["ddp", "DDP", "distributed"]
+        and dist.is_available()
+        and dist.is_initialized()
+    )
+
+
+def _num_workers(args):
+    return getattr(args, "num_workers", 8)
+
+
+def _split_dataset(dataset, val_ratio=0.3, seed=1234):
+    """
+    Deterministic split. All DDP ranks will produce the same split.
+    """
+    dataset_size = len(dataset)
+    indices = np.arange(dataset_size)
+
+    rng = np.random.RandomState(seed)
+    rng.shuffle(indices)
+
+    split = int(np.floor(val_ratio * dataset_size))
+
+    val_indices = indices[:split].tolist()
+    train_indices = indices[split:].tolist()
+
+    train_dataset = Subset(dataset, train_indices)
+    val_dataset = Subset(dataset, val_indices)
+
+    return train_dataset, val_dataset
+
+
+def _build_loader(
+    dataset,
+    args,
+    train=True,
+    distributed=True,
+    drop_last=None,
+):
+    """
+    Builds a normal or DDP DataLoader.
+
+    For DDP training:
+        - use DistributedSampler
+        - set shuffle=False in DataLoader
+        - call loader.sampler.set_epoch(epoch) in training loop
+
+    For validation:
+        - by default this returns a non-distributed loader
+        - use only on rank 0 unless you implement distributed metric reduction
+    """
+    ddp = _is_ddp(args) and distributed
+
+    if drop_last is None:
+        drop_last = train
+
+    if ddp:
+        sampler = DistributedSampler(
+            dataset,
+            shuffle=train,
+            drop_last=drop_last,
+        )
+        shuffle = False
+    else:
+        sampler = None
+        shuffle = train
+
+    num_workers = _num_workers(args)
+
+    loader = DataLoader(
+        dataset,
+        batch_size=args.b,
+        shuffle=shuffle,
+        sampler=sampler,
+        num_workers=num_workers,
+        pin_memory=True,
+        drop_last=drop_last,
+        persistent_workers=num_workers > 0,
+    )
+
+    return loader
+
+
 def get_dataloader(args):
     transform_train = transforms.Compose([
-        transforms.Resize((args.image_size,args.image_size)),
+        transforms.Resize((args.image_size, args.image_size)),
         transforms.ToTensor(),
-        transforms.Lambda(lambda x: x * 255)
+        transforms.Lambda(lambda x: x * 255),
     ])
 
     transform_train_seg = transforms.Compose([
-        transforms.Resize((args.out_size,args.out_size)),
+        transforms.Resize((args.out_size, args.out_size)),
         transforms.ToTensor(),
     ])
 
     transform_test = transforms.Compose([
         transforms.Resize((args.image_size, args.image_size)),
         transforms.ToTensor(),
-        transforms.Lambda(lambda x: x * 255)
+        transforms.Lambda(lambda x: x * 255),
     ])
 
     transform_test_seg = transforms.Compose([
-        transforms.Resize((args.out_size,args.out_size)),
+        transforms.Resize((args.out_size, args.out_size)),
         transforms.ToTensor(),
     ])
-    
-    if args.dataset == 'isic':
-        '''isic data'''
-        isic_train_dataset = ISIC2016(args, args.data_path, transform = transform_train, transform_msk= transform_train_seg, mode = 'Training')
-        isic_test_dataset = ISIC2016(args, args.data_path, transform = transform_test, transform_msk= transform_test_seg, mode = 'Test')
 
-        nice_train_loader = DataLoader(isic_train_dataset, batch_size=args.b, shuffle=True, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(isic_test_dataset, batch_size=args.b, shuffle=False, num_workers=8, pin_memory=True)
-        '''end'''
+    seed = getattr(args, "seed", 1234)
 
-    elif args.dataset == 'decathlon':
-        nice_train_loader, nice_test_loader, transform_train, transform_val, train_list, val_list = get_decath_loader(args)
+    # ------------------------------------------------------------------
+    # Datasets with explicit train/test split
+    # ------------------------------------------------------------------
+    if args.dataset == "isic":
+        train_dataset = ISIC2016(
+            args,
+            args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+            mode="Training",
+        )
 
-    elif args.dataset == 'REFUGE':
-        '''REFUGE data'''
-        refuge_train_dataset = REFUGE(args, args.data_path, transform = transform_train, transform_msk= transform_train_seg, mode = 'Training')
-        refuge_test_dataset = REFUGE(args, args.data_path, transform = transform_test, transform_msk= transform_test_seg, mode = 'Test')
+        test_dataset = ISIC2016(
+            args,
+            args.data_path,
+            transform=transform_test,
+            transform_msk=transform_test_seg,
+            mode="Test",
+        )
 
-        nice_train_loader = DataLoader(refuge_train_dataset, batch_size=args.b, shuffle=True, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(refuge_test_dataset, batch_size=args.b, shuffle=False, num_workers=8, pin_memory=True)
-        '''end'''
+    elif args.dataset == "REFUGE":
+        train_dataset = REFUGE(
+            args,
+            args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+            mode="Training",
+        )
 
-    elif args.dataset == 'LIDC':
-        '''LIDC data'''
-        # dataset = LIDC(data_path = args.data_path)
-        dataset = MyLIDC(args, data_path = args.data_path,transform = transform_train, transform_msk= transform_train_seg)
+        test_dataset = REFUGE(
+            args,
+            args.data_path,
+            transform=transform_test,
+            transform_msk=transform_test_seg,
+            mode="Test",
+        )
 
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(0.2 * dataset_size))
-        np.random.shuffle(indices)
-        train_sampler = SubsetRandomSampler(indices[split:])
-        test_sampler = SubsetRandomSampler(indices[:split])
+    elif args.dataset == "DDTI":
+        train_dataset = DDTI(
+            args,
+            args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+            mode="Training",
+        )
 
-        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=8, pin_memory=True)
-        '''end'''
+        test_dataset = DDTI(
+            args,
+            args.data_path,
+            transform=transform_test,
+            transform_msk=transform_test_seg,
+            mode="Test",
+        )
 
-    elif args.dataset == 'DDTI':
-        '''DDTI data'''
-        refuge_train_dataset = DDTI(args, args.data_path, transform = transform_train, transform_msk= transform_train_seg, mode = 'Training')
-        refuge_test_dataset = DDTI(args, args.data_path, transform = transform_test, transform_msk= transform_test_seg, mode = 'Test')
+    # ------------------------------------------------------------------
+    # Datasets using random internal split
+    # ------------------------------------------------------------------
+    elif args.dataset == "LIDC":
+        dataset = LIDC(
+            args,
+            data_path=args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+        )
+        train_dataset, test_dataset = _split_dataset(dataset, val_ratio=0.2, seed=seed)
 
-        nice_train_loader = DataLoader(refuge_train_dataset, batch_size=args.b, shuffle=True, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(refuge_test_dataset, batch_size=args.b, shuffle=False, num_workers=8, pin_memory=True)
-        '''end'''
+    elif args.dataset == "Brat":
+        dataset = Brat(
+            args,
+            data_path=args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+        )
+        train_dataset, test_dataset = _split_dataset(dataset, val_ratio=0.3, seed=seed)
 
-    elif args.dataset == 'Brat':
-        '''Brat data'''
-        dataset = Brat(args, data_path = args.data_path,transform = transform_train, transform_msk= transform_train_seg)
+    elif args.dataset == "STARE":
+        dataset = STARE(
+            args,
+            data_path=args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+        )
+        train_dataset, test_dataset = _split_dataset(dataset, val_ratio=0.2, seed=seed)
 
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(0.3 * dataset_size))
-        np.random.shuffle(indices)
-        train_sampler = SubsetRandomSampler(indices[split:])
-        test_sampler = SubsetRandomSampler(indices[:split])
+    elif args.dataset == "kits":
+        dataset = KITS(
+            args,
+            data_path=args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+        )
+        train_dataset, test_dataset = _split_dataset(dataset, val_ratio=0.3, seed=seed)
 
-        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=8, pin_memory=True)
-        '''end'''
+    elif args.dataset == "WBC":
+        dataset = WBC(
+            args,
+            data_path=args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+        )
+        train_dataset, test_dataset = _split_dataset(dataset, val_ratio=0.3, seed=seed)
 
-    elif args.dataset == 'STARE':
-        '''STARE data'''
-        # dataset = LIDC(data_path = args.data_path)
-        dataset = STARE(args, data_path = args.data_path, transform = transform_train, transform_msk= transform_train_seg)
+    elif args.dataset == "segrap":
+        dataset = SegRap(
+            args,
+            data_path=args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+        )
+        train_dataset, test_dataset = _split_dataset(dataset, val_ratio=0.3, seed=seed)
 
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(0.2 * dataset_size))
-        np.random.shuffle(indices)
-        train_sampler = SubsetRandomSampler(indices[split:])
-        test_sampler = SubsetRandomSampler(indices[:split])
+    elif args.dataset == "toothfairy":
+        dataset = ToothFairy(
+            args,
+            data_path=args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+        )
+        train_dataset, test_dataset = _split_dataset(dataset, val_ratio=0.3, seed=seed)
 
-        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=8, pin_memory=True)
-        '''end'''
-
-    elif args.dataset == 'kits':
-        '''kits data'''
-        dataset = KITS(args, data_path = args.data_path,transform = transform_train, transform_msk= transform_train_seg)
-
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(0.3 * dataset_size))
-        np.random.shuffle(indices)
-        train_sampler = SubsetRandomSampler(indices[split:])
-        test_sampler = SubsetRandomSampler(indices[:split])
-
-        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=8, pin_memory=True)
-        '''end'''
-
-    elif args.dataset == 'WBC':
-        '''WBC data'''
-        dataset = WBC(args, data_path = args.data_path,transform = transform_train, transform_msk= transform_train_seg)
-
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(0.3 * dataset_size))
-        np.random.shuffle(indices)
-        train_sampler = SubsetRandomSampler(indices[split:])
-        test_sampler = SubsetRandomSampler(indices[:split])
-
-        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=8, pin_memory=True)
-        '''end'''
-
-    elif args.dataset == 'segrap':
-        '''segrap data'''
-        dataset = SegRap(args, data_path = args.data_path,transform = transform_train, transform_msk= transform_train_seg)
-
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(0.3 * dataset_size))
-        np.random.shuffle(indices)
-        train_sampler = SubsetRandomSampler(indices[split:])
-        test_sampler = SubsetRandomSampler(indices[:split])
-
-        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=8, pin_memory=True)
-        '''end'''
-
-    elif args.dataset == 'toothfairy':
-        '''toothfairy data'''
-        dataset = ToothFairy(args, data_path = args.data_path,transform = transform_train, transform_msk= transform_train_seg)
-
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(0.3 * dataset_size))
-        np.random.shuffle(indices)
-        train_sampler = SubsetRandomSampler(indices[split:])
-        test_sampler = SubsetRandomSampler(indices[:split])
-
-        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=8, pin_memory=True)
-        '''end'''
-
-    elif args.dataset == 'wb':
+    elif args.dataset == "wb":
         transform_train = Compose([
             RandCropByPosNegLabeld(
                 keys=["image", "label"],
@@ -194,66 +265,66 @@ def get_dataloader(args):
                 image_threshold=0,
             ),
         ])
-        '''wb data'''
-        dataset = WholeBody(args, data_path=args.data_path, transform=transform_train, transform_msk=transform_train_seg)
 
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(0.3 * dataset_size))
-        np.random.shuffle(indices)
-        train_sampler = SubsetRandomSampler(indices[split:])
-        test_sampler = SubsetRandomSampler(indices[:split])
+        dataset = WholeBody(
+            args,
+            data_path=args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+        )
+        train_dataset, test_dataset = _split_dataset(dataset, val_ratio=0.3, seed=seed)
 
-        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=args.num_workers, pin_memory=True)
-        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=args.num_workers, pin_memory=True)
-        '''end'''
+    elif args.dataset == "atlas":
+        dataset = Atlas(
+            args,
+            data_path=args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+        )
+        train_dataset, test_dataset = _split_dataset(dataset, val_ratio=0.3, seed=seed)
 
-    elif args.dataset == 'atlas':
-        '''atlas data'''
-        dataset = Atlas(args, data_path = args.data_path,transform = transform_train, transform_msk= transform_train_seg)
+    elif args.dataset == "pendal":
+        dataset = Pendal(
+            args,
+            data_path=args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+        )
+        train_dataset, test_dataset = _split_dataset(dataset, val_ratio=0.3, seed=seed)
 
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(0.3 * dataset_size))
-        np.random.shuffle(indices)
-        train_sampler = SubsetRandomSampler(indices[split:])
-        test_sampler = SubsetRandomSampler(indices[:split])
-
-        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=8, pin_memory=True)
-        '''end'''
-
-    elif args.dataset == 'pendal':
-        '''pendal data'''
-        dataset = Pendal(args, data_path = args.data_path,transform = transform_train, transform_msk= transform_train_seg)
-
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(0.3 * dataset_size))
-        np.random.shuffle(indices)
-        train_sampler = SubsetRandomSampler(indices[split:])
-        test_sampler = SubsetRandomSampler(indices[:split])
-
-        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=8, pin_memory=True)
-        '''end'''
-
-    elif args.dataset == 'lnq':
-        '''lnq data'''
-        dataset = LNQ(args, data_path = args.data_path,transform = transform_train, transform_msk= transform_train_seg)
-
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(0.3 * dataset_size))
-        np.random.shuffle(indices)
-        train_sampler = SubsetRandomSampler(indices[split:])
-        test_sampler = SubsetRandomSampler(indices[:split])
-
-        nice_train_loader = DataLoader(dataset, batch_size=args.b, sampler=train_sampler, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(dataset, batch_size=args.b, sampler=test_sampler, num_workers=8, pin_memory=True)
-        '''end'''
+    elif args.dataset == "lnq":
+        dataset = LNQ(
+            args,
+            data_path=args.data_path,
+            transform=transform_train,
+            transform_msk=transform_train_seg,
+        )
+        train_dataset, test_dataset = _split_dataset(dataset, val_ratio=0.3, seed=seed)
 
     else:
-        print("the dataset is not supported now!!!")
-        
+        raise ValueError(f"Dataset {args.dataset} is not supported.")
+
+    # ------------------------------------------------------------------
+    # Build loaders
+    # ------------------------------------------------------------------
+
+    # Training should be distributed under DDP.
+    nice_train_loader = _build_loader(
+        train_dataset,
+        args,
+        train=True,
+        distributed=True,
+        drop_last=True,
+    )
+
+    # Validation/test is intentionally non-distributed here.
+    # Use this loader only on rank 0.
+    nice_test_loader = _build_loader(
+        test_dataset,
+        args,
+        train=False,
+        distributed=False,
+        drop_last=False,
+    )
+
     return nice_train_loader, nice_test_loader

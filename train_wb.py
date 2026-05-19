@@ -1,4 +1,3 @@
-# refined: https://chat.aicopilot.aws.mskcc.org/c/1a4d0db6-6835-44e8-807b-efcef3b4e689
 import os
 import time
 
@@ -29,6 +28,28 @@ def main():
     if args.pretrain:
         weights = torch.load(args.pretrain)
         net.load_state_dict(weights, strict=False)
+
+    # Freeze prompt encoder
+    if args.freeze >= 1:
+        for p in net.prompt_encoder.parameters():
+            p.requires_grad = False
+
+    # Freeze image encoder
+    if args.freeze >= 2:
+        for p in net.image_encoder.parameters():
+            p.requires_grad = False
+
+    # Train mask decoder
+    if args.freeze >= 3:
+        for p in net.mask_decoder.iou_token.parameters():
+            p.requires_grad = False
+
+        for p in net.mask_decoder.mask_tokens.parameters():
+            p.requires_grad = False
+
+    if args.freeze >= 4:
+        for p in net.mask_decoder.transformer.parameters():
+            p.requires_grad = False
 
     optimizer = optim.Adam(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5) #learning rate decay
@@ -77,28 +98,6 @@ def main():
     best_acc = 0.0
     best_tol = 1e4
     best_dice = 0.0
-
-    # Freeze prompt encoder
-    if args.freeze >= 1:
-        for p in net.prompt_encoder.parameters():
-            p.requires_grad = False
-
-    # Freeze image encoder
-    if args.freeze >= 2:
-        for p in net.image_encoder.parameters():
-            p.requires_grad = False
-
-    # Train mask decoder
-    if args.freeze >= 3:
-        for p in net.mask_decoder.iou_token.parameters():
-            p.requires_grad = False
-
-        for p in net.mask_decoder.mask_tokens.parameters():
-            p.requires_grad = False
-
-    if args.freeze >= 4:
-        for p in net.mask_decoder.transformer.parameters():
-            p.requires_grad = False
 
     for epoch in range(settings.EPOCH):
         # if epoch < 5:
