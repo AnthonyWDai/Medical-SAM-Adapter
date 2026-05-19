@@ -16,6 +16,29 @@ from dataset import *
 from utils import *
 
 
+def setup_path_helper(args):
+    """
+    Only rank 0 creates log/checkpoint/sample directories.
+    Then broadcast path_helper to all ranks.
+    """
+    if is_main_process():
+        path_helper = set_log_dir(
+            "%s/msadapter/logs" % os.environ["exp"],
+            args.exp_name
+        )
+    else:
+        path_helper = None
+
+    if dist.is_available() and dist.is_initialized():
+        obj_list = [path_helper]
+        dist.broadcast_object_list(obj_list, src=0)
+        path_helper = obj_list[0]
+        dist.barrier()
+
+    args.path_helper = path_helper
+    return args
+
+
 def setup_ddp():
     if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
         rank = int(os.environ["RANK"])
@@ -80,10 +103,13 @@ def main():
     # ---------------------------------------------------------
     # Logging only on rank 0
     # ---------------------------------------------------------
-    args.path_helper = set_log_dir(
-        "%s/msadapter/logs" % os.environ["exp"],
-        args.exp_name
-    )
+    args = setup_path_helper(args)
+
+    if is_main_process():
+        logger = create_logger(args.path_helper["log_path"])
+        logger.info(args)
+    else:
+        logger = None
 
     if is_main_process():
         logger = create_logger(args.path_helper["log_path"])

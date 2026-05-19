@@ -1,3 +1,5 @@
+## Bugs a lot, discrepancy between paper and code, abandoned
+
 <h1 align="center">● Medical SAM Adapter</h1>
 
 <p align="center">
